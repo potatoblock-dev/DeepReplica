@@ -70,7 +70,10 @@ export type StreamChatOptions = {
   apiKey: string;
   model?: string;
   thinkingEnabled: boolean;
-  /** When true (default with thinking), declare DeepSeek server web tools. */
+  /**
+   * When true, declare `deepseek_web_search` + `deepseek_read_url`.
+   * Independent of thinking (search-only vs deep-thinking search).
+   */
   webToolsEnabled?: boolean;
   /** When true, request a conversation title via DeepSeek `title` extension. */
   enableTitle?: boolean;
@@ -126,7 +129,7 @@ function completionsUrl(apiBase: string, prefixCompletion: boolean): string {
 
 /** Streams a Chat Completions reply; optional DeepSeek web tools for search/read in thinking. */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const enableWebTools = options.webToolsEnabled ?? options.thinkingEnabled;
+  const enableWebTools = Boolean(options.webToolsEnabled);
   const webTools = enableWebTools
     ? ([{ type: "deepseek_web_search" }, { type: "deepseek_read_url" }] as const)
     : null;
@@ -143,17 +146,15 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       if (m.prefix) {
         row.prefix = true;
       }
-      if (webTools && m.role === "assistant") {
+      // Always echo prior tool/reasoning blocks so later turns stay coherent
+      // even if web search is toggled off for the current request.
+      if (m.role === "assistant") {
         if (m.reasoning_content) {
           row.reasoning_content = m.reasoning_content;
         }
         if (m.server_tool_calls?.length) {
           row.server_tool_calls = m.server_tool_calls;
         }
-      }
-      // Prefix continue may still need reasoning_content even without web tools.
-      if (m.prefix && m.role === "assistant" && m.reasoning_content && !row.reasoning_content) {
-        row.reasoning_content = m.reasoning_content;
       }
       return row;
     }),

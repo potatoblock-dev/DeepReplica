@@ -7,6 +7,11 @@ export type ThemeMode = "light" | "dark" | "system";
 export type AppSettings = {
   apiBase: string;
   thinkingEnabled: boolean;
+  /**
+   * When true, declare DeepSeek web tools (search + read_url).
+   * Independent of thinking: off+search = web search; on+search = deep thinking search.
+   */
+  webSearchEnabled: boolean;
   /** When true, collapse the thinking chain after the reply finishes. */
   autoCollapseThinking: boolean;
   /** UI locale; only zh-CN is wired this round. */
@@ -21,6 +26,7 @@ const SETTINGS_KEY = "app";
 const DEFAULT_SETTINGS: AppSettings = {
   apiBase: "https://api.deepseek.com",
   thinkingEnabled: true,
+  webSearchEnabled: false,
   autoCollapseThinking: false,
   locale: "zh-CN",
   fontScale: "md",
@@ -75,6 +81,10 @@ export async function loadSettings(): Promise<AppSettings> {
       typeof stored?.thinkingEnabled === "boolean"
         ? stored.thinkingEnabled
         : DEFAULT_SETTINGS.thinkingEnabled,
+    webSearchEnabled:
+      typeof stored?.webSearchEnabled === "boolean"
+        ? stored.webSearchEnabled
+        : DEFAULT_SETTINGS.webSearchEnabled,
     autoCollapseThinking:
       typeof stored?.autoCollapseThinking === "boolean"
         ? stored.autoCollapseThinking
@@ -91,6 +101,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   const next: AppSettings = {
     apiBase: settings.apiBase.trim().replace(/\/$/, "") || DEFAULT_SETTINGS.apiBase,
     thinkingEnabled: settings.thinkingEnabled,
+    webSearchEnabled: settings.webSearchEnabled,
     autoCollapseThinking: settings.autoCollapseThinking,
     locale: settings.locale === "zh-CN" ? "zh-CN" : DEFAULT_SETTINGS.locale,
     fontScale:

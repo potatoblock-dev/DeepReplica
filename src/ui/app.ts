@@ -39,6 +39,7 @@ import {
   type UsageAggregate,
   type UsageRange,
 } from "../store/usageLedger";
+import { estimateContextUsage, renderContextUsagePanel } from "./contextUsage";
 import { decodeCodeAttr } from "./markdown";
 import { mountMermaid, resetMermaidTheme } from "./mermaidMount";
 import {
@@ -95,6 +96,8 @@ type AppState = {
   renamingId: string | null;
   /** User message id currently open in the inline editor. */
   editingMessageId: string | null;
+  /** Last completed request's API prompt_tokens for calibration display. */
+  lastPromptTokens: number | null;
 };
 
 const PLATFORM_USAGE_URL = "https://platform.deepseek.com/usage";
@@ -202,6 +205,7 @@ export async function mountApp(root: HTMLElement): Promise<void> {
     error: "",
     renamingId: null,
     editingMessageId: null,
+    lastPromptTokens: null,
   };
 
   applyFontScale(state.settings.fontScale);
@@ -435,9 +439,45 @@ export async function mountApp(root: HTMLElement): Promise<void> {
     return `<span class="settings-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.82 14.16a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.43.34.68.22l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.26.42.5.42h3.8c.24 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.25.12.54.02.68-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/></svg></span>`;
   }
 
+  /** Builds the context-usage snapshot for the active conversation + optional draft. */
+  function buildContextSnapshot(draft = ""): ReturnType<typeof estimateContextUsage> {
+    const active = activeConversation();
+    const path = active ? getActivePath(active) : [];
+    return estimateContextUsage({
+      messages: path,
+      draft,
+      toolsEnabled: state.settings.webSearchEnabled,
+    });
+  }
+
+  /** Renders only the context usage panel (used by full render and local refresh). */
+  function renderContextPanelHtml(draft = ""): string {
+    return renderContextUsagePanel(buildContextSnapshot(draft), state.lastPromptTokens);
+  }
+
+  /** Updates the context panel in-place without rebuilding the whole shell. */
+  function refreshContextUsagePanel(draft?: string): void {
+    const el = root.querySelector<HTMLElement>('[data-role="context-usage"]');
+    if (!el) {
+      return;
+    }
+    const text =
+      draft ??
+      root.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')?.value ??
+      "";
+    const html = renderContextPanelHtml(text);
+    const wrap = document.createElement("div");
+    wrap.innerHTML = html;
+    const next = wrap.firstElementChild;
+    if (next) {
+      el.replaceWith(next);
+    }
+  }
+
   /** Builds the centered composer card used on empty and chat screens. */
   function renderComposer(): string {
     return `
+      ${renderContextPanelHtml("")}
       <form class="composer-card" data-role="composer">
         <textarea name="prompt" placeholder="请输入消息" ${state.streaming ? "disabled" : ""}></textarea>
         <div class="composer-toolbar">
@@ -448,7 +488,20 @@ export async function mountApp(root: HTMLElement): Promise<void> {
               data-action="toggle-thinking"
               ${state.streaming ? "disabled" : ""}
               aria-pressed="${state.settings.thinkingEnabled}"
+              title="深度思考"
             >深度思考</button>
+            <button
+              type="button"
+              class="chip ${state.settings.webSearchEnabled ? "active" : ""}"
+              data-action="toggle-web-search"
+              ${state.streaming ? "disabled" : ""}
+              aria-pressed="${state.settings.webSearchEnabled}"
+              title="${
+                state.settings.thinkingEnabled
+                  ? "联网搜索（深度思考搜索）"
+                  : "联网搜索"
+              }"
+            >联网搜索</button>
           </div>
           <div class="composer-actions">
             ${
@@ -941,6 +994,9 @@ export async function mountApp(root: HTMLElement): Promise<void> {
         void sendMessage(form!);
       }
     });
+    textarea?.addEventListener("input", () => {
+      refreshContextUsagePanel(textarea.value);
+    });
 
     root.querySelectorAll<HTMLDetailsElement>('[data-role="thinking"]').forEach((details) => {
       details.addEventListener("toggle", () => {
@@ -998,6 +1054,12 @@ export async function mountApp(root: HTMLElement): Promise<void> {
     }
     if (action === "toggle-thinking") {
       state.settings.thinkingEnabled = !state.settings.thinkingEnabled;
+      await saveSettings(state.settings);
+      render();
+      return;
+    }
+    if (action === "toggle-web-search") {
+      state.settings.webSearchEnabled = !state.settings.webSearchEnabled;
       await saveSettings(state.settings);
       render();
       return;
@@ -1490,7 +1552,7 @@ export async function mountApp(root: HTMLElement): Promise<void> {
         apiBase: state.settings.apiBase,
         apiKey,
         thinkingEnabled: state.settings.thinkingEnabled,
-        webToolsEnabled: mode === "prefix" ? false : state.settings.thinkingEnabled,
+        webToolsEnabled: mode === "prefix" ? false : state.settings.webSearchEnabled,
         enableTitle,
         prefixCompletion: mode === "prefix",
         messages: history,
@@ -1569,6 +1631,10 @@ export async function mountApp(root: HTMLElement): Promise<void> {
           });
         },
         onUsage: (usage) => {
+          if (typeof usage.prompt_tokens === "number" && usage.prompt_tokens > 0) {
+            state.lastPromptTokens = usage.prompt_tokens;
+            refreshContextUsagePanel();
+          }
           void recordUsage({
             model: "deepseek-flash",
             promptTokens: usage.prompt_tokens ?? 0,

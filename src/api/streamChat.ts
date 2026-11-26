@@ -82,6 +82,10 @@ export type StreamChatOptions = {
    * request goes to the beta Chat Completions endpoint.
    */
   prefixCompletion?: boolean;
+  /**
+   * Sampling temperature 0–2. Omit (or leave undefined) to use the API default.
+   */
+  temperature?: number;
   messages: StreamChatMessage[];
   signal?: AbortSignal;
   onReasoningDelta: (text: string) => void;
@@ -167,6 +171,9 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
   }
   if (options.enableTitle) {
     body.title = { enabled: true };
+  }
+  if (typeof options.temperature === "number" && Number.isFinite(options.temperature)) {
+    body.temperature = options.temperature;
   }
 
   const response = await fetch(url, {

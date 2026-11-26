@@ -19,8 +19,17 @@ export type ContextUsageSnapshot = {
   segments: ContextSegment[];
 };
 
+export type ContextUsagePanelOptions = {
+  lastPromptTokens?: number | null;
+  /** When true, show the detailed bar + legend under the ring. */
+  expanded?: boolean;
+};
+
 const TOOLS_JSON =
   '[{"type":"deepseek_web_search"},{"type":"deepseek_read_url"}]';
+
+/** Circumference of the ring path (r=14 in a 36×36 viewBox). */
+const RING_CIRCUMFERENCE = 2 * Math.PI * 14;
 
 /** Rough token estimate: Unicode code points / 4 (no local tokenizer). */
 export function estimateTokens(text: string): number {
@@ -114,6 +123,18 @@ export function formatTokenShort(n: number): string {
   return `${Math.round(m * 10) / 10}M`;
 }
 
+/** Formats a segment's share of the context window for the legend. */
+export function formatSegmentPercent(tokens: number, window: number): string {
+  if (window <= 0 || tokens <= 0) {
+    return "0%";
+  }
+  const pct = (tokens / window) * 100;
+  if (pct > 0 && pct < 0.1) {
+    return "<0.1%";
+  }
+  return `${Math.round(pct * 10) / 10}%`;
+}
+
 /** Escapes text for safe HTML insertion in the panel. */
 function escapeHtml(value: string): string {
   return value
@@ -123,11 +144,36 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-/** Renders the Cursor-like context usage panel HTML. */
+/**
+ * Builds the compact SVG ring. Very small non-zero usage still gets a short arc
+ * so the indicator is visible against the track.
+ */
+function renderContextRing(percent: number, total: number): string {
+  const visualPct = total > 0 ? Math.max(2, Math.min(100, percent || 2)) : 0;
+  const dash = (visualPct / 100) * RING_CIRCUMFERENCE;
+  const gap = RING_CIRCUMFERENCE - dash;
+  return `<svg class="ctx-ring" viewBox="0 0 36 36" aria-hidden="true">
+    <circle class="ctx-ring-track" cx="18" cy="18" r="14" fill="none" />
+    <circle
+      class="ctx-ring-fill"
+      cx="18"
+      cy="18"
+      r="14"
+      fill="none"
+      stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}"
+      stroke-dashoffset="0"
+      transform="rotate(-90 18 18)"
+    />
+  </svg>`;
+}
+
+/** Renders the collapsible context usage control (ring + optional detail panel). */
 export function renderContextUsagePanel(
   snapshot: ContextUsageSnapshot,
-  lastPromptTokens?: number | null,
+  options: ContextUsagePanelOptions = {},
 ): string {
+  const lastPromptTokens = options.lastPromptTokens;
+  const expanded = Boolean(options.expanded);
   const totalLabel = formatTokenShort(snapshot.total);
   const windowLabel = formatTokenShort(snapshot.window);
   const pct = snapshot.percent;
@@ -148,13 +194,17 @@ export function renderContextUsagePanel(
     segments.length === 0
       ? `<div class="ctx-legend-empty">暂无上下文（发送后将计入对话）</div>`
       : `<ul class="ctx-legend">${segments
-          .map(
-            (s) => `<li class="ctx-legend-item">
+          .map((s) => {
+            const tokensLabel = formatTokenShort(s.tokens);
+            const pctLabel = formatSegmentPercent(s.tokens, snapshot.window);
+            return `<li class="ctx-legend-item">
             <span class="ctx-dot ctx-seg-${s.tone}" aria-hidden="true"></span>
             <span class="ctx-legend-label">${escapeHtml(s.label)}</span>
-            <span class="ctx-legend-value">${formatTokenShort(s.tokens)}</span>
-          </li>`,
-          )
+            <span class="ctx-legend-tokens" title="${s.tokens} tokens">${escapeHtml(tokensLabel)}</span>
+            <span class="ctx-legend-slash" aria-hidden="true">/</span>
+            <span class="ctx-legend-pct">${escapeHtml(pctLabel)}</span>
+          </li>`;
+          })
           .join("")}</ul>`;
 
   const measured =
@@ -162,19 +212,39 @@ export function renderContextUsagePanel(
       ? `<div class="ctx-measured">上轮实测 prompt：${formatTokenShort(lastPromptTokens)}</div>`
       : "";
 
-  return `<div class="ctx-usage" data-role="context-usage">
-    <div class="ctx-head">
-      <div class="ctx-title-row">
-        <span class="ctx-title">上下文占用</span>
-        <span class="ctx-badge">估算</span>
-      </div>
-      <div class="ctx-meta">
-        <span class="ctx-pct">${pct}% 已用</span>
-        <span class="ctx-count">~${totalLabel} / ${windowLabel} Tokens</span>
-      </div>
-    </div>
-    <div class="ctx-bar" role="img" aria-label="上下文占用 ${pct}%">${bar}</div>
-    ${legend}
-    ${measured}
+  const detail = expanded
+    ? `<button
+        type="button"
+        class="ctx-usage-detail"
+        data-action="toggle-context-usage"
+        aria-expanded="true"
+        aria-label="上下文占用详情，点击收起"
+        title="点击收起"
+      >
+        <div class="ctx-head">
+          <div class="ctx-title-row">
+            <span class="ctx-title">上下文占用</span>
+            <span class="ctx-badge">估算</span>
+          </div>
+          <div class="ctx-meta">
+            <span class="ctx-pct">${pct}% 已用</span>
+            <span class="ctx-count">~${totalLabel} / ${windowLabel} Tokens</span>
+          </div>
+        </div>
+        <div class="ctx-bar" role="img" aria-label="上下文占用 ${pct}%">${bar}</div>
+        ${legend}
+        ${measured}
+      </button>`
+    : `<button
+        type="button"
+        class="ctx-ring-btn"
+        data-action="toggle-context-usage"
+        aria-expanded="false"
+        aria-label="上下文占用 ${pct}% 已用，约 ${totalLabel} / ${windowLabel} Tokens。点击展开详情"
+        title="上下文占用 ~${totalLabel} / ${windowLabel}"
+      >${renderContextRing(pct, snapshot.total)}</button>`;
+
+  return `<div class="ctx-usage ${expanded ? "is-expanded" : "is-collapsed"}" data-role="context-usage" data-expanded="${expanded ? "true" : "false"}">
+    ${detail}
   </div>`;
 }

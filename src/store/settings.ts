@@ -3,6 +3,8 @@ import { idbRequest, openDb } from "../db/openDb";
 export type AppLocale = "zh-CN";
 export type FontScale = "sm" | "md" | "lg";
 export type ThemeMode = "light" | "dark" | "system";
+/** Data-management chart time range (persisted with settings). */
+export type UsageRangeSetting = "today" | "7d" | "30d";
 
 export type AppSettings = {
   apiBase: string;
@@ -20,9 +22,24 @@ export type AppSettings = {
   fontScale: FontScale;
   /** Color theme: light, dark, or follow OS. */
   theme: ThemeMode;
+  /** Last selected usage chart range on the data-management page. */
+  usageRange: UsageRangeSetting;
+  /**
+   * When true, omit `temperature` from API requests (official default).
+   * Default checked in the params panel.
+   */
+  temperatureUseDefault: boolean;
+  /** Custom temperature 0–2 used only when `temperatureUseDefault` is false. */
+  temperature: number;
 };
 
 const SETTINGS_KEY = "app";
+/** DeepSeek Chat Completions temperature range (omit field = API default). */
+export const TEMPERATURE_MIN = 0;
+export const TEMPERATURE_MAX = 2;
+export const TEMPERATURE_STEP = 0.1;
+export const TEMPERATURE_FALLBACK = 1;
+
 const DEFAULT_SETTINGS: AppSettings = {
   apiBase: "https://api.deepseek.com",
   thinkingEnabled: true,
@@ -31,7 +48,29 @@ const DEFAULT_SETTINGS: AppSettings = {
   locale: "zh-CN",
   fontScale: "md",
   theme: "dark",
+  usageRange: "today",
+  temperatureUseDefault: true,
+  temperature: TEMPERATURE_FALLBACK,
 };
+
+/** Narrows a stored value to a valid usage range, else the default. */
+function normalizeUsageRange(value: unknown): UsageRangeSetting {
+  if (value === "today" || value === "7d" || value === "30d") {
+    return value;
+  }
+  return DEFAULT_SETTINGS.usageRange;
+}
+
+/** Clamps temperature to the API range and rounds to one decimal. */
+export function normalizeTemperature(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) {
+    return TEMPERATURE_FALLBACK;
+  }
+  const clamped = Math.min(TEMPERATURE_MAX, Math.max(TEMPERATURE_MIN, n));
+  const stepped = Math.round(clamped / TEMPERATURE_STEP) * TEMPERATURE_STEP;
+  return Number(stepped.toFixed(1));
+}
 
 let systemThemeListener: ((event: MediaQueryListEvent) => void) | null = null;
 
@@ -92,6 +131,12 @@ export async function loadSettings(): Promise<AppSettings> {
     locale: stored?.locale === "zh-CN" ? "zh-CN" : DEFAULT_SETTINGS.locale,
     fontScale,
     theme,
+    usageRange: normalizeUsageRange(stored?.usageRange),
+    temperatureUseDefault:
+      typeof stored?.temperatureUseDefault === "boolean"
+        ? stored.temperatureUseDefault
+        : DEFAULT_SETTINGS.temperatureUseDefault,
+    temperature: normalizeTemperature(stored?.temperature),
   };
 }
 
@@ -112,6 +157,9 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
       settings.theme === "light" || settings.theme === "dark" || settings.theme === "system"
         ? settings.theme
         : DEFAULT_SETTINGS.theme,
+    usageRange: normalizeUsageRange(settings.usageRange),
+    temperatureUseDefault: Boolean(settings.temperatureUseDefault),
+    temperature: normalizeTemperature(settings.temperature),
   };
   await idbRequest(
     db.transaction("settings", "readwrite").objectStore("settings").put(next, SETTINGS_KEY),

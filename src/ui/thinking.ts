@@ -229,12 +229,15 @@ export function renderThinkingBlock(input: ThinkingRenderInput): string {
 /**
  * Renders assistant content with KaTeX math and citation anchors
  * (Unicode code-point indices from DeepSeek url_citation annotations).
+ * Pass serverToolCalls so hover cards can reuse search source meta.
  */
 export function renderAnnotatedContent(
   content: string,
   annotations?: ContentAnnotation[],
+  serverToolCalls?: ServerToolStep[],
 ): string {
-  return renderMessageHtml(content, annotations);
+  const sources = flattenToolCalls(serverToolCalls).flatMap((c) => c.sources ?? []);
+  return renderMessageHtml(content, annotations, sources);
 }
 
 /** Flattens server tool steps into a call list for live merging. */

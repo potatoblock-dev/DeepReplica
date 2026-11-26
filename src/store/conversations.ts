@@ -21,6 +21,8 @@ export type ChatMessage = {
   reasoningEndedAt?: number;
   serverToolCalls?: ServerToolStep[];
   annotations?: ContentAnnotation[];
+  /** True when the user stopped streaming mid-reply (eligible for 继续生成). */
+  interrupted?: boolean;
   createdAt: number;
 };
 
@@ -43,6 +45,7 @@ export type AssistantPatch = {
   reasoningEndedAt?: number;
   serverToolCalls?: ServerToolStep[];
   annotations?: ContentAnnotation[];
+  interrupted?: boolean;
 };
 
 type MessageInput = Omit<ChatMessage, "id" | "createdAt" | "parentId"> & {
@@ -269,6 +272,7 @@ export async function appendMessage(
     reasoningEndedAt: message.reasoningEndedAt,
     serverToolCalls: message.serverToolCalls,
     annotations: message.annotations,
+    interrupted: message.interrupted,
     createdAt: message.createdAt ?? Date.now(),
   };
   conversation.messages.push(nextMessage);
@@ -316,6 +320,10 @@ export async function updateAssistant(
     reasoningEndedAt: patch.reasoningEndedAt ?? conversation.messages[index].reasoningEndedAt,
     serverToolCalls: patch.serverToolCalls ?? conversation.messages[index].serverToolCalls,
     annotations: patch.annotations ?? conversation.messages[index].annotations,
+    interrupted:
+      patch.interrupted !== undefined
+        ? patch.interrupted
+        : conversation.messages[index].interrupted,
   };
   conversation.updatedAt = Date.now();
   await putConversation(conversation);

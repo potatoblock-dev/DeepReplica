@@ -4,7 +4,7 @@ name: Deploy aichat
 # The server timer pulls that asset. This workflow stores no server credentials.
 on:
   push:
-    branches: [main]
+    branches: [main, cursor/aichat-deploy-pipeline-b323]
     paths-ignore:
       - "**.md"
       - "docs/**"

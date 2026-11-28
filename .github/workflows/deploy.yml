@@ -1,0 +1,57 @@
+name: Deploy aichat
+
+# Build the static SPA and publish it as the rolling "aichat" release.
+# The server timer pulls that asset. This workflow stores no server credentials.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-aichat
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the static site
+        run: npm run build
+
+      - name: Pack the site bundle
+        run: |
+          test -f dist/index.html
+          tar -C dist -czf site.tar.gz .
+
+      - name: Publish the rolling site release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Replace site.tar.gz on the aichat tag so the server puller sees one URL.
+          if gh release view aichat --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload aichat site.tar.gz --clobber --repo "${GITHUB_REPOSITORY}"
+          else
+            gh release create aichat site.tar.gz \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "aichat" \
+              --notes "Rolling static bundle for aichat.potatoblock.top."
+          fi

@@ -1,0 +1,17 @@
+[Unit]
+Description=Pull the DeepReplica aichat static release
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aichat
+Group=aichat
+Environment=AICHAT_SITE_ROOT=/opt/1panel/www/sites/aichat/index
+Environment=AICHAT_STATE_DIR=/var/lib/aichat
+ExecStart=/usr/local/sbin/aichat-pull
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/1panel/www/sites/aichat/index /var/lib/aichat

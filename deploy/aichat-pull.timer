@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for a new DeepReplica aichat release
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=aichat-pull.service
+
+[Install]
+WantedBy=timers.target

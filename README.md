@@ -30,6 +30,14 @@ npm run dev
 
 在设置中填写 DeepSeek API Key 与 API 根地址后即可对话。
 
+## 部署
+
+站点是静态包，由 OpenResty 提供给 `aichat.potatoblock.top`。
+
+推送到 `main` 会跑 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)：`npm ci`、`npm run build`，把 `dist/` 打成 `site.tar.gz`，更新 GitHub Release 标签 `aichat`。服务器定时器 `aichat-pull.timer`（约每 2 分钟）执行 [`deploy/pull_release.py`](deploy/pull_release.py)，把该资源换到站点目录。仓库和 workflow 里不放服务器登录信息。
+
+手动再发布一次：GitHub → Actions → Deploy aichat → Run workflow。
+
 ## 许可与说明
 
 仓库代码供 Potatoblock / 自用开发；调用 DeepSeek API 须遵守其服务条款与用量计费。官方 demo 与文档仅作能力对照，不表示与 DeepSeek 存在从属关系。

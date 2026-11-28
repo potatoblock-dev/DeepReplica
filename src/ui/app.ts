@@ -605,11 +605,17 @@ export async function mountApp(root: HTMLElement): Promise<void> {
     return normalizeTemperature(value).toFixed(1);
   }
 
-  /** Sampling params panel in the same slot as context usage (covers the ring). */
+  /** Renders the sampling panel. Thinking mode locks temperature to the official default. */
   function renderParamsPanel(): string {
-    const useDefault = state.settings.temperatureUseDefault;
+    const thinkingOn = state.settings.thinkingEnabled;
+    /** Thinking mode ignores temperature; keep official-default locked on. */
+    const useDefault = thinkingOn || state.settings.temperatureUseDefault;
     const temp = formatTemperature(state.settings.temperature);
-    const disabled = useDefault ? "disabled" : "";
+    const controlsDisabled = useDefault ? "disabled" : "";
+    const checkDisabled = thinkingOn ? "disabled" : "";
+    const hint = thinkingOn
+      ? "思考模式下 temperature 不生效（官方文档）；请关闭深度思考后再自定义。"
+      : "勾选时不传 temperature，由接口使用官方默认值；取消勾选后可自定义（0–2）。";
     return `
       <div class="composer-params" data-role="composer-params">
         <div class="composer-params-head">
@@ -622,11 +628,14 @@ export async function mountApp(root: HTMLElement): Promise<void> {
             aria-label="关闭参数"
           >×</button>
         </div>
-        <label class="composer-params-check">
+        <label class="composer-params-check ${thinkingOn ? "is-locked" : ""}" title="${
+          thinkingOn ? "思考模式不支持自定义 temperature" : ""
+        }">
           <input
             type="checkbox"
             data-action="toggle-temperature-default"
             ${useDefault ? "checked" : ""}
+            ${checkDisabled}
           />
           <span>使用官方默认 Temperature</span>
         </label>
@@ -641,7 +650,7 @@ export async function mountApp(root: HTMLElement): Promise<void> {
               max="${TEMPERATURE_MAX}"
               step="${TEMPERATURE_STEP}"
               value="${temp}"
-              ${disabled}
+              ${controlsDisabled}
               aria-label="Temperature"
             />
             <input
@@ -652,12 +661,12 @@ export async function mountApp(root: HTMLElement): Promise<void> {
               max="${TEMPERATURE_MAX}"
               step="${TEMPERATURE_STEP}"
               value="${temp}"
-              ${disabled}
+              ${controlsDisabled}
               aria-label="Temperature 数值"
             />
           </div>
         </div>
-        <p class="composer-params-hint">勾选时不传 temperature，由接口使用官方默认值；取消勾选后可自定义（0–2）。</p>
+        <p class="composer-params-hint">${hint}</p>
       </div>`;
   }
 
@@ -1516,6 +1525,10 @@ export async function mountApp(root: HTMLElement): Promise<void> {
       return;
     }
     if (action === "toggle-temperature-default") {
+      // Thinking mode ignores temperature, so the default checkbox stays locked.
+      if (state.settings.thinkingEnabled) {
+        return;
+      }
       state.settings = {
         ...state.settings,
         temperatureUseDefault: !state.settings.temperatureUseDefault,
@@ -2048,9 +2061,11 @@ export async function mountApp(root: HTMLElement): Promise<void> {
         webToolsEnabled: mode === "prefix" ? false : state.settings.webSearchEnabled,
         enableTitle,
         prefixCompletion: mode === "prefix",
-        temperature: state.settings.temperatureUseDefault
-          ? undefined
-          : normalizeTemperature(state.settings.temperature),
+        // Official docs: temperature is not sent while thinking is enabled.
+        temperature:
+          state.settings.thinkingEnabled || state.settings.temperatureUseDefault
+            ? undefined
+            : normalizeTemperature(state.settings.temperature),
         messages: history,
         signal: abortController.signal,
         onReasoningDelta: (text) => {

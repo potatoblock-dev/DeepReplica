@@ -1623,11 +1623,20 @@ html[data-theme="light"] .composer-params-close:hover {
   user-select: none;
 }
 
+.composer-params-check.is-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .composer-params-check input {
   width: 15px;
   height: 15px;
   accent-color: var(--accent);
   cursor: pointer;
+}
+
+.composer-params-check.is-locked input {
+  cursor: not-allowed;
 }
 
 .composer-params-row {
